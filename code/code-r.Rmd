@@ -1,0 +1,544 @@
+---
+title: "Code (R)"
+output: html_document
+author: Zoé Wolter
+date: "2023-08-31"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Load Data
+
+```{r warning=FALSE}
+# European NUTS-level election data
+election <- readr::read_csv(here::here('data/eu-ned-data.csv'))
+
+# NUTS-2 shapefile
+geo <- sf::read_sf(here::here('data/NUTS_RG_20M_2021_3035.shp'))
+
+# Manifesto
+manifesto <- readr::read_csv(here::here('data/manifesto-data.csv'))
+```
+
+## Preprocessing: Geometry
+
+Filter NUTS data for NUTS-2 level and select relevant variables:
+
+```{r}
+geo <- geo %>% 
+  dplyr::filter(LEVL_CODE == 2) %>%
+  dplyr::select(NUTS_ID, geometry)
+```
+
+## Preprocessing: Election Data
+
+Select relevant variables from the election data:
+```{r}
+election <- election %>%
+  dplyr::select(
+    country, country_code, nuts2, regionname, type, year, party_abbreviation, party_english, party_native, partyvote, validvote
+  ) %>%
+  dplyr::mutate(
+    vote_share = partyvote / validvote,
+    party_abbreviation = tolower(party_abbreviation),
+    .keep = 'unused'
+  )
+```
+
+Only keep rows with parties, i.e. remove rows with the information for "OTHER":
+```{r}
+election <- election %>%
+  dplyr::filter(party_abbreviation != 'other' & party_abbreviation != 'others')
+```
+
+Convert country codes to ISO3 format:
+```{r}
+election$country_code <- countrycode::countrycode(election$country, 
+                                                  origin = 'country.name', 
+                                                  destination = 'iso3c') 
+```
+
+Split election data for EP and Parliamentary elections:
+```{r}
+election_ep <- election %>%
+  dplyr::filter(type == 'EP')
+
+election_parl <- election %>%
+  dplyr::filter(type == 'Parliament')
+```
+
+Mean vote share per party over the years in each NUTS-2 region:
+```{r, warning=FALSE}
+# EP
+election_ep <- election_ep %>%
+  dplyr::group_by(country_code, regionname, nuts2, party_abbreviation, party_english, party_native) %>%
+  dplyr::summarize(vote_share = mean(vote_share))
+
+# Parliament
+election_parl <- election_parl %>%
+  dplyr::group_by(country_code, regionname, nuts2, party_abbreviation, party_english, party_native) %>%
+  dplyr::summarize(vote_share = mean(vote_share))
+```
+
+## Preprocessing: Manifesto Data
+
+Select relevant variables from the Manifesto data:
+
+```{r}
+manifesto <- manifesto %>%
+  dplyr::select(
+    countryname, partyname, partyabbrev, parfam
+  ) %>%
+  dplyr::group_by(
+    countryname, partyname
+  ) %>% 
+  slice(1)
+```
+
+Convert country name variables to ISO3c format to make joining easier:
+
+```{r}
+manifesto$country_code <- countrycode::countrycode(manifesto$countryname, 
+                                                   origin = 'country.name', 
+                                                   destination = 'iso3c') 
+
+manifesto <- manifesto %>%
+  dplyr::mutate(
+    country_code = dplyr::case_when(
+      countryname == 'Northern Ireland' ~ 'GBR', TRUE ~ country_code 
+      ),
+    partyabbrev = tolower(partyabbrev))
+```
+
+Clean party abbreviations:
+```{r}
+# convert ä, ö, ü in manifesto data to a, o, u in variable partyabbrev
+manifesto <- manifesto %>%
+  dplyr::mutate(
+    partyabbrev = str_replace_all(partyabbrev, 'ö', 'o'),
+    partyabbrev = str_replace_all(partyabbrev, 'ä', 'a'),
+    partyabbrev = str_replace_all(partyabbrev, 'ü', 'u'),
+  )
+```
+
+## Join data
+
+```{r}
+# EP
+election_ep <- election_ep %>%
+  dplyr::left_join(manifesto, 
+                   by = join_by(country_code == country_code, party_abbreviation == partyabbrev),
+                   relationship = 'many-to-many') %>%
+  # classify as nationalist and radical right party if parfam coded as 70
+  dplyr::mutate(
+    rrp = dplyr::case_when(
+      parfam == 70 ~ TRUE,
+      is.na(parfam) ~ NA,
+      TRUE ~ FALSE
+    )
+  )
+```
+
+Unfortunately, as there is no common party identifier and the party names and abbrevations do not match all, 
+many parties cannot be matched. 
+Thus manually checking is required:
+
+```{r}
+# ignore all small parties
+election_ep <- election_ep %>%
+  dplyr::filter(vote_share > 0.05)
+```
+
+```{r}
+# show remaining unclassified parties
+election_ep %>%
+  dplyr::filter(
+    is.na(rrp) 
+  )
+```
+
+```{r}
+election_ep <- election_ep %>%
+  dplyr::mutate(
+    rrp = dplyr::case_when(
+      party_abbreviation == 'ldm' ~ FALSE, # Liste Dr. Martin
+      
+      party_abbreviation == 'cd&v n-va' ~ FALSE, # Christian Democratic and Flemish (50)
+      party_abbreviation == 'openvld-vivant' ~ FALSE, # Open Vlaamse Liberalen en Democraten
+      party_abbreviation == 'paptb' ~ FALSE, # Workers' Party of Belgium (20)
+      party_abbreviation == 'vu-id' ~ FALSE, # People’s Union - Complete Democracy for the 21st century (90)
+      party_abbreviation == 'fn' ~ TRUE, # National Front
+      party_abbreviation == 'parti populaire' ~ TRUE, # People's Party
+      party_abbreviation == 'agir' ~ TRUE, # Agir
+      
+      party_abbreviation == 'kb' ~ FALSE, # Coalition for Bulgaria (30)
+      party_abbreviation == 'pes' ~ FALSE, # Party of European Socialists
+      party_abbreviation == 'sinyata' ~ FALSE, # Blue Coalition (50)
+      party_abbreviation == 'bbt' ~ FALSE, # Bulgaria without Censorhsip (60)
+      party_abbreviation == 'bsp/kb' ~ FALSE, # Coalition for Bulgaria (30)
+      party_abbreviation == 'imro-bnp' ~ TRUE, # IMRO -- BULGARIAN NATIONAL MOVEMENT
+      party_abbreviation == 'lider' ~ FALSE, # Liberal Initiative for Democratic European Developement
+      party_abbreviation == 'volya-the bulgarian patriots' ~ TRUE, # Bulgarian Patriots
+      party_abbreviation == 'abc' ~ FALSE, # Alternative for Bulgarian Revival (30)
+      party_abbreviation == 'democratic bulgaria' ~ FALSE, # Democratic Bulgaria
+      party_abbreviation == 'rb' ~ FALSE, # REFORMIST BLOC
+       
+      party_abbreviation == 'disy-euro.ko' ~ TRUE, # Democratic Coalition (70)
+      party_abbreviation == 'edek-green' ~ FALSE, # Movement for Social Democracy Party 
+      party_abbreviation == 'gte' ~ FALSE, # EUROPEAN DEMOCRACY / FOR EUROPE
+      
+      party_abbreviation == 'cssd' ~ FALSE, # CZECH SOCIAL DEMOCRATIC PARTY
+      party_abbreviation == 'kdu/csl' ~ FALSE, # Christian and Democratic Union - Czech People's Party (50)
+      party_abbreviation == 'kscm' ~ FALSE, # Communist Party of Bohemia and Moravia (20)
+      party_abbreviation == 'pi' ~ FALSE, # CZECH PIRATE PARTY
+      party_abbreviation == 'sn' ~ FALSE, # SNK Union of Independents
+      party_abbreviation == 'snk-ed' ~ FALSE, # SNK EUROPEAN DEMOCRATS
+      party_abbreviation == 'eds' ~ FALSE, # EUROPEAN DEMOCRATIC PARTY 
+      party_abbreviation == 'strana zelenych' ~ FALSE, # Green Party (10)
+      party_abbreviation == 's - jb' ~ FALSE, # Česká Suverenita
+      
+      party_abbreviation == 'b90/gru' ~ FALSE, # Alliance‘90/Greens (10)
+      party_abbreviation == 'cdu' ~ FALSE, # Christian Democratic Union/Christian Social Union (50)
+      party_abbreviation == 'grune' ~ FALSE, # Alliance‘90/Greens (10)
+      party_abbreviation == 'die linke' ~ FALSE, # The Left (20)
+      party_abbreviation == 'fw' ~ FALSE, # Freie Wähler
+      party_abbreviation == 'freie wahler' ~ FALSE, # Freie Wähler
+      party_abbreviation == 'csu' ~ FALSE, # CSU (50)
+      
+      party_abbreviation == 'fmec' ~ FALSE, # FOLKEBEVAEGELSEN MOD EU
+      party_abbreviation == 'fmeu' ~ FALSE, # FOLKEBEVAEGELSEN MOD EU
+      party_abbreviation == 'jb' ~ FALSE, # JUNIBEVAEGELSEN
+      
+      party_abbreviation == 'cs' ~ FALSE, # Citizens - Party of the Citizens (40)
+      party_abbreviation == 'iu-euia' ~ FALSE, # United Left (20)
+      party_abbreviation == 'iu-icv-euia' ~ FALSE, # United Left (20)
+      party_abbreviation == 'iu-icv-euia-ba' ~ FALSE, # United Left (20)
+      party_abbreviation == 'la izquierda plural' ~ FALSE, # United Left (20)
+      party_abbreviation == 'p.p.' ~ FALSE, # People's Party (60)
+      party_abbreviation == 'podemos' ~ FALSE, # United We Can (90)
+      party_abbreviation == 'podemos-iu' ~ FALSE, # United We Can (90)
+      party_abbreviation == 'ce' ~ TRUE, # UNITED NATIONAL MOVEMENT
+      party_abbreviation == 'cn' ~ TRUE, # EUROPEAN-NATIONALIST COALITION
+      party_abbreviation == 'edp' ~ FALSE, # EUROPE OF THE PEOPLE - THE GREENS
+      party_abbreviation == 'edp-v' ~ FALSE, # EUROPE OF THE PEOPLE - THE GREENS
+      party_abbreviation == 'la izquierda plural' ~ FALSE, # United Left (20)
+      party_abbreviation == 'verdes' ~ FALSE, # EUROPE OF THE PEOPLE - THE GREENS
+      party_abbreviation == 'ceu' ~ FALSE, # COALITION FOR THE EUROPE OF THE PEOPLES
+      party_abbreviation == 'ceus' ~ FALSE, # COALITION FOR THE EUROPE OF THE PEOPLES
+      party_abbreviation == 'cpe' ~ FALSE, # COALITION FOR THE EUROPE OF THE PEOPLES
+      party_abbreviation == 'ahora republicas' ~ FALSE, # ESQUERRA REPUBLICANA DE CATALUNYA
+      party_abbreviation == 'cn+ep' ~ TRUE, # EUROPEAN-NATIONALIST COALITION
+      party_abbreviation == 'epdd' ~ FALSE, # ESQUERRA REPUBLICANA DE CATALUNYA
+      party_abbreviation == 'galeusca' ~ FALSE, # Galeusca–Peoples of Europe
+      party_abbreviation == 'junts' ~ FALSE, # JUNTS PER CATALUNYA
+      party_abbreviation == 'primavera europea' ~ FALSE, # European Spring (Spanish electoral alliance)
+      party_abbreviation == 'hb' ~ FALSE, # HERRI BATASUNA
+      party_abbreviation == 'ii' ~ FALSE, # INICIATIVA INTERNACIONALISTA - LA SOLIDARIDAD ENTRE LOS PUEBLOS
+      party_abbreviation == 'lpd' ~ FALSE, # Los Pueblos Deciden
+      party_abbreviation == 'pep' ~ FALSE, # People's Party
+      
+      party_abbreviation == 'ie' ~ FALSE, # Pro Patria Union (60)
+      party_abbreviation == 'ind.' ~ FALSE, #
+      party_abbreviation == 'isamaa' ~ FALSE, # Pro Patria Union (60)
+      party_abbreviation == 'kesk' ~ FALSE, # Estonian Center Party (40)
+      party_abbreviation == 'rahvaliit' ~ FALSE, # Estonian People’s Union (80)
+      party_abbreviation == 'ref' ~ FALSE, # Estonian Reform Party (40)
+      party_abbreviation == 'reform' ~ FALSE, # Estonian Reform Party (40)
+      party_abbreviation == 'respublica' ~ FALSE, # Union for the Republic (60)
+      party_abbreviation == 'tar' ~ FALSE, #
+      party_abbreviation == 'uksik.' ~ FALSE, #
+      
+      party_abbreviation == 'kok' ~ FALSE, # National Coalition (60)
+      party_abbreviation == 'sdp' ~ FALSE, # SOCIAL DEMOCRATIC PARTY OF FINLAND
+      party_abbreviation == 'vihr' ~ FALSE, # Green Union (10)
+      party_abbreviation == 'nuors' ~ FALSE, # Young Finnish Party (40)
+      party_abbreviation == 'rkp' ~ FALSE, # Finnish People’s Party (40)
+      
+      party_abbreviation == 'alliance des outre-mers' ~ FALSE, # Alliance of the Overseas
+      party_abbreviation == 'choisir notre europe' ~ FALSE, # choisir notre europe
+      party_abbreviation == "envie d'europe ecologique et sociale" ~ FALSE, # envie d'europe ecologique et sociale
+      party_abbreviation == 'europe ecologie' ~ FALSE, # Europe Ecology - The Greens (10)
+      party_abbreviation == 'la france insoumise' ~ FALSE, # La France insoumise
+      party_abbreviation == 'liste bleu marine' ~ FALSE, #
+      party_abbreviation == 'mrg' ~ FALSE, # Radical Socialist Party (40)
+      party_abbreviation == 'pour la france, agir en europe' ~ FALSE, #
+      party_abbreviation == 'ps-mdc-prg' ~ FALSE, # Citizen and Republican Movement
+      party_abbreviation == 'renaissance soutenue par la republique en marche, le modem et ses partenaires' ~ FALSE, #
+      party_abbreviation == 'rpr-dl' ~ FALSE, # Rally for the Republic (60)
+      party_abbreviation == 'rprd-mpf' ~ FALSE, # Rally for the Republic (60)
+      party_abbreviation == 'udf-rpr' ~ FALSE, # Rally for the Republic (60)
+      party_abbreviation == 'udi-modem' ~ FALSE, # Union of Democrats and Independents (40)
+      party_abbreviation == 'ump-nc-gm' ~ FALSE, # 	Union for a Popular Movement (60)
+      party_abbreviation == 'union de la droite et du centre' ~ FALSE, # Union der Rechten und der Mitte
+      party_abbreviation == 'vec' ~ FALSE, # The Greens (10)
+      party_abbreviation == 'choisir notre europe' ~ FALSE, #
+      party_abbreviation == 'ecoeu' ~ FALSE, # EUROPE ECOLOGY - THE GREENS
+      party_abbreviation == 'europe ecologie' ~ FALSE, # EUROPE ECOLOGY - THE GREENS
+      party_abbreviation == 'ps-mdc-prg' ~ FALSE, #
+      party_abbreviation == 'verts' ~ FALSE, # GREENS
+      party_abbreviation == 'cpnt' ~ FALSE, # HUNTING, FISHING, NATURE, TRADITION
+      party_abbreviation == "envie d'europe ecologique et sociale" ~ FALSE, # envie d'europe ecologique et sociale
+      party_abbreviation == 'fg' ~ FALSE, # Left Front (20)
+      party_abbreviation == 'la france insoumise' ~ FALSE, # LA FRANCE INSOUMISE
+      party_abbreviation == 'npa' ~ FALSE, # NOUVEAU PARTI ANTICAPITALISTE
+      party_abbreviation == 'nous te ferons europe !' ~ FALSE, # 
+      party_abbreviation == 'mpf-cpnt-libertas' ~ FALSE, # Mouvement pour la France
+      party_abbreviation == 'mpf' ~ FALSE, # Mouvement pour la France
+      party_abbreviation == "l'europe de la finance, ca suffit ! place au peuple !" ~ FALSE, #
+      party_abbreviation == 'liste citoyenne du printemps europeen avec benoit hamon soutenue par generation.s et deme-diem 25' ~ FALSE, #
+      party_abbreviation == 'regions et peuples solidaires' ~ FALSE, # regions et peuples solidaires
+      party_abbreviation == 'regsol' ~ FALSE, #
+      party_abbreviation == 'ap' ~ FALSE, #
+      party_abbreviation == 'alliance des regionalistes, ecologistes et progressistes des outre-mer regions et peuples solidaires' ~ FALSE, #
+      party_abbreviation == 'regmin' ~ FALSE, #
+      party_abbreviation == "l'union pour les outremer" ~ FALSE, # Alliance of the Overseas
+      party_abbreviation == 'lo' ~ FALSE, # LUTTE OUVRIERE
+      party_abbreviation == 'lo-lcr' ~ FALSE, # LIGUE COMMUNISTE REVOLUTIONNAIRE
+      party_abbreviation == 'regmm' ~ FALSE, #
+      party_abbreviation == 'mn' ~ FALSE, #
+      
+      party_abbreviation == 'brexit' ~ FALSE, # brexit party / reform UK
+      party_abbreviation == 'con' ~ FALSE, # Conservative Party (60)
+      party_abbreviation == 'green' ~ FALSE, # Green Party of England and Wales (10)
+      party_abbreviation == 'lab' ~ FALSE, # Labour Party (30)
+      party_abbreviation == 'ldem' ~ FALSE, # Liberal Democrats (40)
+      party_abbreviation == 'snp-pc' ~ FALSE, # Scottish National Party (90)
+      party_abbreviation == 'bnp' ~ TRUE, # BRITISH NATIONAL PARTY
+      party_abbreviation == 'respect' ~ FALSE, # Respect Party
+      
+      party_abbreviation == 'olive tree' ~ FALSE, # Olive Tree – Democratic Alignment
+      party_abbreviation == 'polan' ~ FALSE, # Political Spring (50)
+      party_abbreviation == 'potami' ~ FALSE, # The River (30)
+      party_abbreviation == 'golden dawn' ~ TRUE, # Golden Dawn (70)
+      party_abbreviation == 'greek solution' ~ TRUE, # Greek Solution (70)
+      party_abbreviation == 'kief' ~ FALSE, # Party of Friendship, Equality and Peace
+      party_abbreviation == 'greek european citizens' ~ FALSE, # GREEK EUROPEAN CITIZENS
+      
+      party_abbreviation == 'alliance for croatia' ~ TRUE, # alliance for croatia
+      party_abbreviation == 'hdz coalition' ~ FALSE, # Croatian Democratic Union
+      party_abbreviation == 'hrast-hks-hsp as-uhd' ~ FALSE, # Croatian Growth, Croatian Party of Rights
+      party_abbreviation == 'hss-hsls' ~ FALSE, # Croatian Social Liberal Party
+      party_abbreviation == 'independent' ~ FALSE, # Independents for Croatia
+      party_abbreviation == 'orah' ~ FALSE, # SUSTAINABLE DEVELOPMENT OF CROATIA
+      party_abbreviation == 'zivi zid' ~ FALSE, # Human Shield (95)
+      party_abbreviation == 'laburisti' ~ FALSE, # Croatian Labourists - Labour Party (20)
+      
+      party_abbreviation == 'lmp-hp' ~ FALSE, # Hungary's Green Party
+      party_abbreviation == 'egyutt-pm' ~ FALSE, # Together – Party for a New Era
+      party_abbreviation == 'momentum' ~ FALSE, # MOMENTUM MOVEMENT
+      party_abbreviation == 'mszp-parbeszed' ~ FALSE, # Párbeszéd Magyarországért
+      
+      party_abbreviation == 'ff' ~ TRUE, # Republican Party (70)
+      party_abbreviation == 'lp' ~ FALSE, # Labour Party (30)
+      party_abbreviation == 'dl' ~ FALSE, # Democratic Left Party (20)
+      party_abbreviation == 'g' ~ FALSE, # Green Party (10)
+      party_abbreviation == 'gp' ~ FALSE, # Green Party (10)
+      party_abbreviation == 'i4c' ~ FALSE, # Independent 4 Change
+      party_abbreviation == 'ind' ~ FALSE, # Independent
+      party_abbreviation == 'sd' ~ FALSE, # Social Democrats (30)
+      party_abbreviation == 'soc' ~ FALSE, # Socialist Party (20)
+      party_abbreviation == 'sp' ~ FALSE, # Socialist Party (20)
+      party_abbreviation == 'lib' ~ FALSE, # Liberal Party of Ireland
+      
+      party_abbreviation == 'alleanza nazionale' ~ TRUE, # National Alliance (70)
+      party_abbreviation == 'an - p.segni' ~ FALSE, # Pact of National Rebirth
+      party_abbreviation == 'democratici sinistra' ~ FALSE, # Democratic Party of the Left (20)
+      party_abbreviation == 'di pietro italia dei valori' ~ FALSE, # Italy of Values
+      party_abbreviation == 'forza italia' ~ FALSE, # Go Italy (60)
+      party_abbreviation == "fratelli d'italia" ~ FALSE, # Brothers of Italy - National Centre-right (60)
+      party_abbreviation == "fratelli d'italia - alleanza nazionale" ~ FALSE, # Brothers of Italy - National Centre-right (60)
+      party_abbreviation == 'i democratici' ~ FALSE, # Democratic Party (30)
+      party_abbreviation == "il popolo della liberta'" ~ FALSE, # People of Freedom (60)
+      party_abbreviation == 'lega salvini premier' ~ TRUE, # Northern League (70)
+      party_abbreviation == 'movimento 5 stelle' ~ FALSE, # Five Star Movement (95)
+      party_abbreviation == 'movimento 5 stelle beppegrillo.it' ~ FALSE, # Five Star Movement (95)
+      party_abbreviation == 'nuovo centro destra - udc' ~ FALSE, # New Centre-Right – Union of the Centre
+      party_abbreviation == 'p.popolare italiano' ~ FALSE, # Partito Popolare Italiano
+      party_abbreviation == 'partito democratico' ~ FALSE, # Democratic Party (30)
+      party_abbreviation == 'rifondazione comunista' ~ FALSE, # Communist Refoundation Party
+      party_abbreviation == 'unione di centro' ~ FALSE, # Union of the Center (50)
+      party_abbreviation == "uniti nell'ulivo" ~ FALSE, # Uniti nell'Ulivo
+      party_abbreviation == "l'altra europa con tsipras" ~ FALSE, # L'Altra Europa con Tsipras
+      party_abbreviation == 'ppi (pop)' ~ FALSE, # PARTITO POPOLARE ITALIANO
+      party_abbreviation == 'psi-ad' ~ FALSE, # Italian Socialist Party
+      party_abbreviation == 'rifondazione comunista' ~ FALSE, # Partito della Rifondazione Comunista
+      party_abbreviation == "sinistra e liberta'" ~ FALSE, # Left Ecology Freedom (20)
+      party_abbreviation == 'centro crist.dem.' ~ FALSE, # Christian Democratic Centre (50)
+      party_abbreviation == 'rifond.com. - sin.europea - com.italiani' ~ FALSE, # Partito della Rifondazione Comunista et al.
+      party_abbreviation == 'socialisti uniti' ~ FALSE, # Socialisti Uniti
+      party_abbreviation == 'u.d.eur' ~ FALSE, # Union of Democrats for Europe
+      party_abbreviation == 'udeur' ~ FALSE, # Union of Democrats for Europe
+      party_abbreviation == 'lega nord' ~ TRUE, # Northern League
+      party_abbreviation == 'lega nord-die freiheitlichen-basta euro' ~ TRUE, # Northern League
+      party_abbreviation == 'lista emma bonino' ~ FALSE, # Bonino List
+      party_abbreviation == 'pli-pri-fed' ~ FALSE, # Italian Liberal Party et al
+      party_abbreviation == 'ed.liste verdi' ~ FALSE, # FEDERATION OF THE GREENS
+      party_abbreviation == 'lega lombarda-a.nord' ~ FALSE, # Lega Lombarda – Alleanza Nord
+      party_abbreviation == 'dipietro occhetto' ~ FALSE, # Achille Occhetto
+      party_abbreviation == '+eu-iic-pde' ~ FALSE, # More Europe et al
+      party_abbreviation == 'alleanza lombarda autonomia' ~ FALSE, # Lega per l'Autonomia - Alleanza Lombarda
+      party_abbreviation == 'europa verde' ~ FALSE, # europa verde
+      party_abbreviation == 'fed.dei verdi' ~ FALSE, # FEDERATION OF THE GREENS
+      party_abbreviation == 'fed.liste verdi' ~ FALSE, # FEDERATION OF THE GREENS
+      party_abbreviation == 'federalismo' ~ FALSE, # federalismo
+      party_abbreviation == 'liga rep.ven. union' ~ FALSE, #
+      party_abbreviation == 'ppst' ~ FALSE, #
+      party_abbreviation == 'p.segni scognamiglio' ~ FALSE, # Segni Pact
+      party_abbreviation == 'patto segni' ~ FALSE, # Segni Pact
+      party_abbreviation == 'la destra-mpa- pensionati -all.di centro' ~ FALSE, # Pensioners' Party et al
+      party_abbreviation == 'la rete-mov.dem.' ~ FALSE, # The Network/Movement for Democracy (95)
+      party_abbreviation == "autonomie liberte' democratie" ~ FALSE, # Autonomy Liberty Democracy (Aosta Valley) (90)
+      party_abbreviation == "autonomie per l'europa" ~ FALSE, # Autonomy Liberty Democracy (Aosta Valley) (90)
+      party_abbreviation == 'uv' ~ FALSE, # VALDOTANIAN UNION
+      party_abbreviation == "vallee d'aoste" ~ FALSE, # Aosta Valley (political coalition)
+      
+      party_abbreviation == 'lra kss' ~ FALSE, # Election Action of Lithuania’s Poles (90)
+      party_abbreviation == 'llra kss-lrs' ~ FALSE, # Election Action of Lithuania’s Poles (90)
+      party_abbreviation == 'ts lkd' ~ FALSE, # Homeland Union - Lithuanian Christian Democrats (60)
+      party_abbreviation == 'tt ldp' ~ TRUE, # Order and Justice (70)
+      party_abbreviation == 'vkm-amt' ~ FALSE, # Vieningas Kaunas
+      party_abbreviation == 'vkm-prpj' ~ FALSE, # Vieningas Kaunas
+      party_abbreviation == 'lvzs' ~ FALSE, # Lithuanian Peasant and Green Union (80)
+      party_abbreviation == 'llra kss' ~ FALSE, # Election Action of Lithuania’s Poles (90)
+      
+      party_abbreviation == 'csv' ~ FALSE, # Christian Social People’s Party (50)
+      party_abbreviation == 'dp' ~ FALSE, # Democratic Party (40)
+      party_abbreviation == 'greng' ~ FALSE, # The Greens (10)
+      party_abbreviation == 'lsap' ~ FALSE, # Socialist Workers’ Party of Luxembourg (30)
+      party_abbreviation == 'ppl' ~ FALSE, # PIRATE PARTY LUXEMBOURG
+
+      party_abbreviation == 'slc' ~ FALSE, # Latvian Way Union (40)
+      party_abbreviation == 'va-tb/lnnk' ~ FALSE, # Tēvzemei un Brīvībai/LNNK
+      party_abbreviation == 'jv' ~ FALSE, # Unity (60)
+      party_abbreviation == 'lksrsl' ~ FALSE, # Latvijas Krievu savienība
+      party_abbreviation == 'lpp / lc' ~ FALSE, # Latvia’s First Party (50)
+      party_abbreviation == 'ps' ~ FALSE, # Pilsoniskā savienība
+      party_abbreviation == 'tb / lnnk' ~ FALSE, # Tēvzemei un Brīvībai/LNNK
+      party_abbreviation == 'v' ~ FALSE, # Unity (60)
+      
+      party_abbreviation == 'mlp/pl' ~ FALSE, # PARTIT LABURISTA
+      
+      party_abbreviation == 'cu-sgp' ~ FALSE, # CHRISTENUNIE - STAATKUNDIG GEREFORMEERDE PARTIJ
+      party_abbreviation == 'd66' ~ FALSE, # Democrats‘66 (40)
+      party_abbreviation == 'et' ~ FALSE, # EUROPA TRANSPARANT
+      party_abbreviation == 'sgp-gpv-rpf' ~ FALSE, # Gereformeerd Politiek Verbond et al
+      party_abbreviation == 'cu-sgp' ~ FALSE, # Christian Union (50)
+      party_abbreviation == '50+' ~ FALSE, # 50Plus (95)
+      
+      party_abbreviation == 'ke' ~ FALSE, #
+      party_abbreviation == 'knp' ~ FALSE, # CONGRESS OF THE NEW RIGHT
+      party_abbreviation == 'korwin' ~ FALSE, # Nowa Nadzieja
+      party_abbreviation == 'samoobrona rp' ~ FALSE, # Self-Defence of the Polish Republic (80)
+      party_abbreviation == 'sdpl' ~ FALSE, # SOCIAL DEMOCRACY OF POLAND
+      party_abbreviation == 'wiosna' ~ FALSE, # Spring (40)
+      party_abbreviation == 'kukiz 15' ~ TRUE, # Kukiz'15 (70)
+      party_abbreviation == 'europa+' ~ FALSE, # europa+
+      
+      party_abbreviation == 'cds.pp' ~ FALSE, # CDS – Partido Popular
+      party_abbreviation == 'mpt' ~ FALSE, # MOVIMENTO PARTIDO DA TERRA / PARTIDO DA TERRA
+      party_abbreviation == 'pcp.pev' ~ FALSE, # Unified Democratic Coalition (20)
+      party_abbreviation == 'ppd.psd' ~ FALSE, # Popular Democratic Party (60)
+      party_abbreviation == 'ppd.psd..cds.pp' ~ FALSE, # Popular Democratic Party (60)
+      party_abbreviation == 'ppd.psd.cds.pp' ~ FALSE, # Popular Democratic Party (60)
+      
+      party_abbreviation == 'pld' ~ FALSE, # Partidul Democrat Liberal
+      party_abbreviation == 'png-cd' ~ FALSE, # Partidul Noua Generație-Creștin Democrat
+      party_abbreviation == 'pro' ~ FALSE, # Pro România
+      party_abbreviation == 'psd+pc' ~ FALSE, # Social Democratic Party et al
+      party_abbreviation == 'psd-unpr-pc' ~ FALSE, # Social Democratic Party et al
+      party_abbreviation == 'usr-plus' ~ FALSE, # Save Romania Union (40)
+      party_abbreviation == 'udm' ~ FALSE, # Democratic Alliance of Hungarians in Romania
+      party_abbreviation == 'udmr' ~ FALSE, # Democratic Alliance of Hungarians in Romania
+      party_abbreviation == 'undr' ~ FALSE, # Democratic Alliance of Hungarians in Romania
+      
+      party_abbreviation == 'koalicia progresivne slovensko a spolu - obcianska demokracia' ~ FALSE, # SPOLU - OBCIANSKA DEMOKRACIA
+      party_abbreviation == 'kotleba - ludova strana nase slovensko' ~ TRUE, # LUDOVA STRANA NASE SLOVENSKO
+      party_abbreviation == 'krestanskodemokraticke hnutie' ~ FALSE, # Christian Democratic Movement (50)
+      party_abbreviation == 'ls-hzds' ~ TRUE, # Kotleba – People's Party Our Slovakia & Movement for a Democratic Slovakia (70)
+      party_abbreviation == 'nova-kds-oks' ~ FALSE, # NOVA VACSINA
+      party_abbreviation == 'olano-nova-ku-zmena zdola' ~ FALSE, # Ordinary People and Independent Personalities (60)
+      party_abbreviation == 'sdku' ~ FALSE, # Slovak Democratic and Christian Union (50)
+      party_abbreviation == 'sdku-ds' ~ FALSE, # Slovak Democratic and Christian Union - Democartic Party (50)
+      party_abbreviation == 'sloboda a solidarita' ~ FALSE, # Freedom and Solidarity (40)
+      party_abbreviation == 'smer - socialna demokracia' ~ FALSE, # Direction-Social Democracy (30)
+      party_abbreviation == 'slovenska narodna strana' ~ TRUE, # Slovak National Party (70)
+      party_abbreviation == 'smk-mkp' ~ FALSE, # Party of the Hungarian Coalition (90)
+      party_abbreviation == 'strana madarskej komunity - magyar kozosseg partja' ~ FALSE, # Party of the Hungarian Coalition (90)
+      party_abbreviation == 'obycajni ludia a nezavisle osobnosti (olano)' ~ FALSE, # Ordinary People and Independent Personalities (60)
+      party_abbreviation == 'most-hid' ~ FALSE, # Most–Híd
+      party_abbreviation == 'strana madarskej komunity - magyar kozosseg partja PA' ~ FALSE, # Party of the Hungarian Coalition (90)
+      
+      party_abbreviation == 'lds - desus' ~ FALSE, # Liberal Democracy of Slovenia (40)
+      party_abbreviation == 'levica' ~ FALSE, # The Left (20)
+      party_abbreviation == 'marjana' ~ FALSE, # List of Marjan Šarec (40)
+      party_abbreviation == 'n.si' ~ FALSE, # New Slovenian Christian People’s Party (50)
+      party_abbreviation == 'n.si - sls' ~ FALSE, # New Slovenian Christian People’s Party (50)
+      party_abbreviation == 'sds - sls' ~ FALSE, # Slovenian Democratic Party (60)
+      party_abbreviation == 'verjamem' ~ FALSE, # VERJAMEM
+      party_abbreviation == 'zares' ~ FALSE, # zares
+      party_abbreviation == 'zdruzena levica' ~ FALSE, # The Left (20)
+      
+      party_abbreviation == 'c' ~ FALSE, # Centre Party (80)
+      party_abbreviation == 'jl' ~ FALSE, # June List
+      party_abbreviation == 'm' ~ FALSE, # Moderate Coalition Party (60)
+      party_abbreviation == 'vp' ~ FALSE, # Left Party (20)
+      party_abbreviation == 'pp' ~ FALSE, # Pirate Party
+      party_abbreviation == 'fi' ~ FALSE, # Feminist Initiative
+      
+      TRUE ~ rrp, 
+    )
+  )
+```
+
+Filter for radical right parties and get their average vote share per region:
+
+```{r}
+# filter for rrp's
+election_ep_rrp <- election_ep %>%
+  dplyr::filter(rrp == TRUE)
+
+# check duplicates: Flemish Bloc / Flemish Interest are duplicated
+election_ep_rrp %>% 
+  dplyr::group_by(country_code, regionname, party_abbreviation) %>% 
+  dplyr::filter(n() > 1)
+
+# remove duplicates
+election_ep_rrp <- election_ep_rrp %>%
+  dplyr::filter(partyname != 'Flemish Bloc')
+```
+
+```{r}
+election_ep_rrp <- election_ep_rrp %>% 
+  dplyr::group_by(country_code, regionname, nuts2) %>% 
+  dplyr::summarize(vote_share = sum(vote_share))
+```
+
+
+Join data which holds geometries with the election data:
+
+```{r}
+# join
+election_ep_rrp <- election_ep_rrp %>%
+  dplyr::left_join(geo, by = join_by(nuts2 == NUTS_ID))
+
+# convert to sf object
+election_ep_rrp <- sf::st_as_sf(election_ep_rrp)
+```
+
+
+
+Guadeloupe, Martinique, French Guiana and La Réunion
+
+Guadeloupe La Réunion
+
+```{r}
+`%notin%` <- Negate(`%in%`)
+
+ggplot() +
+  geom_sf(data = (election_ep_rrp %>% filter(regionname %notin% 
+                                               c('Guadeloupe', 'La Réunion', 'Guyane', 'Mayotte'))), 
+          aes(fill = vote_share))
+```
+
