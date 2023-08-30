@@ -7,6 +7,7 @@ pacman::p_load(tidyverse,
                sf,
                countrycode,
                here,
+               Hmisc,
                install = TRUE,
                update = FALSE)
 
