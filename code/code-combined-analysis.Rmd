@@ -6,14 +6,14 @@ date: "2023-08-30"
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-source(here::here('code/packages.R'))
+source(here::here(file.path('code', 'packages.R')))
 ```
 
 ## Load Preprocessed Data
 
 ```{r}
-unemp <- readr::read_csv(here::here('data/employment-processed.csv'))
-rrpvote <- readr::read_csv(here::here('data/rrp-vote-processed.csv'))
+unemp <- readr::read_csv(here::here(file.path('data', 'employment-processed.csv')))
+rrpvote <- readr::read_csv(here::here(file.path('data', 'rrp-vote-processed.csv')))
 ```
 
 ## Join Data Sets
@@ -35,7 +35,7 @@ df <- rrpvote %>%
 
 ```{r}
 readr::write_csv(x = df,
-                 file = here::here('data/data-set.csv'))
+                 file = here::here(file.path('data', 'data-set.csv')))
 ```
 
 ## Analysis
@@ -50,6 +50,6 @@ ggplot(data = df,
        y = 'Vote Share in %') +
   geom_smooth(method = lm, color = 'orange')
 
-ggsave(file = here::here('out/employment-voteshares.png'),
+ggsave(file = here::here(file.path('out', 'employment-voteshares.png')),
        width = 8, height = 4)
 ```

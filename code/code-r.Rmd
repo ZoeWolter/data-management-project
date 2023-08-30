@@ -14,13 +14,13 @@ source(here::here('code/packages.R'))
 
 ```{r warning=FALSE}
 # European NUTS-level election data
-election <- readr::read_csv(here::here('data/eu-ned-data.csv'))
+election <- readr::read_csv(here::here(file.path('data', 'eu-ned-data.csv')))
 
 # NUTS-2 shapefile
-geo <- sf::read_sf(here::here('data/NUTS_RG_20M_2021_3035.shp'))
+geo <- sf::read_sf(here::here(file.path('data', 'NUTS_RG_20M_2021_3035.shp')))
 
 # Manifesto
-manifesto <- readr::read_csv(here::here('data/manifesto-data.csv'))
+manifesto <- readr::read_csv(here::here(file.path('data', 'manifesto-data.csv')))
 ```
 
 ## Preprocessing: Geometry
@@ -536,7 +536,7 @@ election_ep_rrp <- election_ep_rrp %>%
 
 ```{r}
 readr::write_csv(x = election_ep_rrp,
-                 file = here::here('data/rrp-vote-processed.csv'))
+                 file = here::here(file.path('data', 'rrp-vote-processed.csv')))
 ```
 
 
@@ -562,7 +562,7 @@ ggplot(data = election_ep_rrp,
        y = 'Vote Shares in %') +
   theme_bw()
 
-ggsave(file = here::here('out/vote-shares-rrp.png'),
+ggsave(file = here::here(file.path('out', 'vote-shares-rrp.png')),
        width = 8, height = 4)
 ```
 
@@ -592,7 +592,7 @@ ggplot() +
        fill = 'Vote Shares in %') +
   theme_bw()
 
-ggsave(file = here::here('out/vote-shares-rrp-map.png'),
+ggsave(file = here::here(file.path('out', 'vote-shares-rrp-map.png')),
        width = 12, height = 6)
 ```
 
