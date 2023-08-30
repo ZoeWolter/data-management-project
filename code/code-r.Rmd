@@ -7,6 +7,7 @@ date: "2023-08-31"
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+source(here::here('code/packages.R'))
 ```
 
 ## Load Data
@@ -61,7 +62,7 @@ election$country_code <- countrycode::countrycode(election$country,
 ```
 
 Split election data for EP and Parliamentary elections:
-```{r}
+```{r message=FALSE}
 election_ep <- election %>%
   dplyr::filter(type == 'EP')
 
@@ -70,7 +71,7 @@ election_parl <- election %>%
 ```
 
 Mean vote share per party over the years in each NUTS-2 region:
-```{r, warning=FALSE}
+```{r message=FALSE}
 # EP
 election_ep <- election_ep %>%
   dplyr::group_by(country_code, regionname, nuts2, party_abbreviation, party_english, party_native) %>%
@@ -507,7 +508,7 @@ election_ep_rrp <- election_ep_rrp %>%
   dplyr::filter(partyname != 'Flemish Bloc')
 ```
 
-```{r}
+```{r message=FALSE}
 election_ep_rrp <- election_ep_rrp %>% 
   dplyr::group_by(country_code, regionname, nuts2) %>% 
   dplyr::summarize(vote_share = sum(vote_share))

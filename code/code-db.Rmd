@@ -7,11 +7,12 @@ date: "2023-08-31"
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+source(here::here('code/packages.R'))
 ```
 
 ## Load Data
 
-```{r}
+```{r message=FALSE}
 eurostat <- readxl::read_excel(here::here('data/eurostat-data.xlsx'), 
                                sheet = "Sheet 1", skip = 12)
 ```
@@ -52,25 +53,16 @@ Create and connect to database `dataproject`:
 ```{r}
 # connect to postgres 
 db <- dbConnect(Postgres(),
-                user = "correlaid", 
-                password = "")
-
-db <- dbConnect(Postgres(),
-                user = "dpuser", 
+                user = "dpuser",
                 password = "dppassword")
 
 # create database if it does not exist yet
-dbExecute(db, "CREATE DATABASE dataproject;")
+# dbExecute(db, "CREATE DATABASE dataproject;")
 
 # connect to database
 db <- dbConnect(Postgres(),
                 dbname = "dataproject",
-                user = "correlaid", 
-                password = "")
-
-db <- dbConnect(Postgres(),
-                dbname = "dataproject",
-                user = "dpuser", 
+                user = "dpuser",
                 password = "dppassword")
 ```
 
@@ -121,7 +113,8 @@ dbExecute(db,
 dbGetQuery(db,
            'SELECT * 
             FROM eurostat 
-            WHERE year2019 IS NULL;')
+            WHERE year2019 IS NULL
+            LIMIT 5;')
 
 # check datatypes
 dbGetQuery(db,
@@ -141,7 +134,8 @@ dbExecute(db,
 # check and drop unnecessary column
 dbGetQuery(db,
            "SELECT emp2019, CAST(year2019 AS real) 
-           FROM eurostat;")
+           FROM eurostat
+           LIMIT 5;")
 dbExecute(db,
           'ALTER TABLE eurostat
            DROP COLUMN year2019;')
@@ -210,7 +204,7 @@ dbGetQuery(db,
 ```
 
 Violin plot of employment rates of persons with foreign citizenship:
-```{r}
+```{r warning=FALSE}
 ggplot(data = employment,
               aes(x = '', y = emp2019)) +
   geom_violin(trim = FALSE) +
