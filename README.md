@@ -1,7 +1,8 @@
 # Seminar | Data Management for Social Scientists 
 # Data Project 
 
-*Summer term 2023*\n
+*Summer term 2023*
+
 *Zoé Wolter*
 
 ## File Structure
