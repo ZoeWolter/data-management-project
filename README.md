@@ -9,16 +9,24 @@
 
 ```
 ├── data-management-project.Rproj
-│   ├── code --------------- folder which contains the code
-│   │   ├── .R -------------
-│   ├── data --------------- folder which contains the data
-│   │   ├── data ----------- 
-│   ├── out ---------------- folder with all outputs of the analysis
-│   ├── renv --------------- setup environment 
-│   ├── renv.lock ---------- setup environment 
-│   ├── requirements.txt --- contains all packages used in the project 
-|   ├── .gitignore --------- specifies untracked files 
-|   ├── .Rprofile ---------- set options (renv activated)
+│   ├── code ----------------------------- folder which contains the code
+│   │   ├── code-r.Rmd ------------------- code to preprocess and analyze data on vote shares 
+│   │   ├── code-db.Rmd ------------------ code to preprocess and analyze data on employment rates
+│   │   ├── code-combined-analysis.Rmd --- code to analyze combined data
+│   │   ├── packages.R ------------------- file loaded from Rmds to load packages 
+│   ├── data ----------------------------- folder which contains the data
+│   │   ├── data-set.csv ----------------- final data set after processing 
+│   │   ├── employment-processed.csv ----- employment data after processing 
+│   │   ├── eu-ned-data.csv -------------- raw data: EU-NED
+│   │   ├── eurostat-data.xlsx ----------- raw data: Eurostat
+│   │   ├── manifesto-data.csv ----------- raw data: Manifesto
+│   │   ├── rrp-vote-processed.csv ------- vote share data after processing
+│   │   ├── NUTS_RG_20M_2021_3035.shp ---- shapefile for NUTS-2 regions
+│   ├── out ------------------------------ folder with all outputs of the analysis
+│   ├── renv ----------------------------- setup environment 
+│   ├── renv.lock ------------------------ setup environment 
+|   ├── .gitignore ----------------------- specifies untracked files 
+|   ├── .Rprofile ------------------------ set options (renv activated)
 |   ├── README.md
 ```
 
