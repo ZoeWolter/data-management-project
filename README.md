@@ -32,15 +32,23 @@ In recent years, the narrative of radical right parties gaining popularity all o
 For the analysis, the **European NUTS-Level Election Dataset** (Vergioglou et al. 2022) is used for data on European parliamentary elections on a disaggregated level. The dataset contains election data for national parliamentary elections as well as European parliament (EP) results from current EU member states and UK from 1994 disaggregated to the European NUTS regions. For this analysis, data for the EP elections on NUTS2 region level is used. To get an insight into whether a party can be classified as nationalist and radical right party, the **Manifesto dataset** (Lehmann et al. 2023) is used. It provides information on how to categorize a party in party families. Unfortunately, the variable is assigned once when the party first appears in the dataset, but nevertheless it is a good first classification of European parties. However, a lot of manually categorization has to be done as some parties included in the EU-NED dataset are not included in the Manifesto dataset or do not have identical names or identifiers. Data on unemployment by citizenship (i.e. unemployment rate of those with citizenship in a foreign country) is retrieved from **Eurostat**. They provide regional information on NUTS2 level on the unemployment rate among those cizizens with citizenship in a foreign country. For the sake of data visualization of the **NUTS2** regions, the GISCO statistical unit dataset of Eurostat is used.
 
 ## Analysis
-![Map Vote Share](https://github.com/ZoeWolter/data-management-project/blob/main/out/vote-shares-rrp-map.png?raw=true)
-![Map Employment Rate](https://github.com/ZoeWolter/data-management-project/blob/main/out/employment-rates-map.png?raw=true)
+
+First, violin plots allow a first insight into the distribution of both variables. Overall, the mean vote share of nationalist and radical right parties over all countries included in the data is close to 12%. The average employment rate in the data is about 64%.
 ![Violin Vote Shares](https://github.com/ZoeWolter/data-management-project/blob/main/out/vote-shares-rrp.png?raw=true)
 ![Violin Employment Rates](https://github.com/ZoeWolter/data-management-project/blob/main/out/employment-rates.png?raw=true)
+
+A first look at the maps showing vote shares of nationalist and radical right parties and employment rates of persons with foreign citizenship does not reveal a clear pattern of relation between both variables:
+![Map Vote Share](https://github.com/ZoeWolter/data-management-project/blob/main/out/vote-shares-rrp-map.png?raw=true)
+![Map Employment Rate](https://github.com/ZoeWolter/data-management-project/blob/main/out/employment-rates-map.png?raw=true)
+
+A scatterplot with linear regression line also shows no clear relation between vote shares and employment rates:
 ![Comparison](https://github.com/ZoeWolter/data-management-project/blob/main/out/employment-voteshares.png?raw=true)
 
 ## Some thoughts about limitations and further research
+- Manual categorization of parties in whether they are nationalist and radical right parties is a huge limitation to this analysis.
 - Just descriptive insights so far, further analysis has to go further and analyze vote choice on the individual level. 
-- It would be interesting to run the analysis again, not for European parliamentary elections but national elections in the European countries. 
+- Not all European regions are included in the datasets, so no comprehensive comparison is possible.
+- It would be interesting to run the analysis again, not only for European parliamentary elections but national elections in the European countries. 
 
 ## References
 - Bolet, D. (2020). *Local labour market competition and radical right voting: Evidence from France.* European Journal of Political Research, 59(4), 817–841. 
