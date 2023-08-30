@@ -144,7 +144,6 @@ election_ep <- election_ep %>%
 Unfortunately, as there is no common party identifier and the party names and abbrevations do not match all, 
 many parties cannot be matched. 
 Thus manually checking is required:
-
 ```{r}
 # ignore all small parties
 election_ep <- election_ep %>%
@@ -493,7 +492,6 @@ election_ep <- election_ep %>%
 ```
 
 Filter for radical right parties and get their average vote share per region:
-
 ```{r}
 # filter for rrp's
 election_ep_rrp <- election_ep %>%
@@ -516,31 +514,84 @@ election_ep_rrp <- election_ep_rrp %>%
 ```
 
 
-Join data which holds geometries with the election data:
-
+Join data which contains geometries with the election data:
 ```{r}
 # join
 election_ep_rrp <- election_ep_rrp %>%
   dplyr::left_join(geo, by = join_by(nuts2 == NUTS_ID))
-
-# convert to sf object
-election_ep_rrp <- sf::st_as_sf(election_ep_rrp)
 ```
 
-
-
-Guadeloupe, Martinique, French Guiana and La Réunion
-
-Guadeloupe La Réunion
-
+Remove overseas territories: Guadeloupe, La Réunion, Guyane, Mayotte:
 ```{r}
 # define not in operator
 `%notin%` <- Negate(`%in%`)
 
-# plot
+election_ep_rrp <- election_ep_rrp %>%
+  dplyr::filter(regionname %notin% c('Guadeloupe', 'La Réunion', 'Guyane', 'Mayotte'))
+```
+
+
+## Export Preprocessed Data 
+
+```{r}
+readr::write_csv(x = election_ep_rrp,
+                 file = here::here('data/rrp-vote-processed.csv'))
+```
+
+
+## First Analysis
+
+Average vote share of nationalist and radical right parties:
+```{r}
+mean(election_ep_rrp$vote_share, na.rm = TRUE)
+```
+
+Violin plot of vote shares of nationalist and radical right parties:
+```{r}
+ggplot(data = election_ep_rrp,
+              aes(x = '', y = vote_share)) +
+  geom_violin(trim = FALSE) +
+  stat_summary(fun.data = mean_sdl,
+                 geom = 'pointrange', color = 'blue') +
+  geom_jitter(shape = 16, position = position_jitter(0.2), color = 'lightblue') +
+  coord_flip() +
+  scale_y_continuous(breaks = seq(0, 0.6, 0.1), labels = seq(0, 60, 10)) +
+  labs(title = 'Distribution of Vote Shares of Nationalist and Radical Right Parties in EP Elections',
+       x = '',
+       y = 'Vote Shares in %') +
+  theme_bw()
+
+ggsave(file = here::here('out/vote-shares-rrp.png'),
+       width = 8, height = 4)
+```
+
+Regions with lowest / highest vote shares of nationalist and radical right parties:
+```{r}
+# increasing order of vote shares
+election_ep_rrp %>%
+  arrange(vote_share)
+
+# decreasing order of vote shares
+election_ep_rrp %>%
+  arrange(desc(vote_share))
+```
+
+Map:
+```{r}
+# convert to sf object
+election_ep_rrp <- sf::st_as_sf(election_ep_rrp)
+```
+
+```{r}
 ggplot() +
-  geom_sf(data = (election_ep_rrp %>% filter(regionname %notin% 
-                                               c('Guadeloupe', 'La Réunion', 'Guyane', 'Mayotte'))), 
-          aes(fill = vote_share))
+  geom_sf(data = (election_ep_rrp %>% filter(regionname != 'Abroad votes')), 
+          aes(fill = vote_share)) +
+  scale_fill_viridis_c() +
+  labs(title = 'Vote Shares of Nationalist and Radical Right Parties in EP Elections',
+       fill = 'Vote Shares in %') +
+  theme_bw()
+
+ggsave(file = here::here('out/vote-shares-rrp-map.png'),
+       width = 12, height = 6)
 ```
 

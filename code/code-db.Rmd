@@ -147,7 +147,41 @@ dbExecute(db,
            DROP COLUMN year2019;')
 ```
 
-## Data Analysis
+Join data which contains geometries with the employment data:
+```{r}
+# NUTS-2 shapefile
+geo <- sf::read_sf(here::here('data/NUTS_RG_20M_2021_3035.shp'))
+
+# preprocess geometry data
+geo <- geo %>% 
+  dplyr::filter(LEVL_CODE == 2) %>%
+  dplyr::select(NUTS_ID, geometry)
+
+# join with employment data
+employment <- dbGetQuery(db,
+                         'SELECT *
+                          FROM eurostat;') %>%
+  dplyr::left_join(geo, by = join_by(nuts2 == NUTS_ID))
+```
+
+Remove French overseas territories: Guadeloupe, La Réunion, Guyane, Mayotte:
+```{r}
+# define not in operator
+`%notin%` <- Negate(`%in%`)
+
+employment <- employment %>%
+  dplyr::filter(region %notin% c('Guadeloupe', 'La Réunion', 'Guyane', 'Mayotte', 'Martinique'))
+```
+
+## Export Preprocessed Data 
+
+Store table as csv to be merged with other data table:
+```{r}
+readr::write_csv(x = employment,
+                 file = here::here('data/employment-processed.csv'))
+```
+
+## First Analysis
 
 Average of employment rates for persons with foreign citizenship over all regions:
 ```{r}
@@ -165,7 +199,7 @@ dbGetQuery(db,
             LIMIT 10;')
 ```
 
-Regions with the lowest employment rate of persons with foreign citizenship:
+Regions with the highest employment rate of persons with foreign citizenship:
 ```{r}
 dbGetQuery(db,
            'SELECT *
@@ -175,18 +209,43 @@ dbGetQuery(db,
             LIMIT 10;')
 ```
 
-## Export Table 
-
-Store table as csv to be merged with other data table:
+Violin plot of employment rates of persons with foreign citizenship:
 ```{r}
-eurostat <- dbGetQuery(db,
-                       'SELECT *
-                       FROM eurostat;')
+ggplot(data = employment,
+              aes(x = '', y = emp2019)) +
+  geom_violin(trim = FALSE) +
+  stat_summary(fun.data = mean_sdl,
+                 geom = 'pointrange', color = 'blue') +
+  geom_jitter(shape = 16, position = position_jitter(0.2), color = 'lightblue') +
+  coord_flip() +
+  scale_y_continuous(breaks = seq(0, 100, 10), labels = seq(0, 100, 10)) +
+  labs(title = 'Distribution of Employment Rates of Persons with Foreign Citizenship',
+       x = '',
+       y = 'Employment Rates in %') +
+  theme_bw()
 
-readr::write_csv(x = eurostat,
-                 file = here::here('data/eurostat-processed.csv'))
+ggsave(file = here::here('out/employment-rates.png'),
+       width = 8, height = 4)
 ```
 
+Map: 
+```{r}
+# convert to sf object
+employment <- sf::st_as_sf(employment)
+```
+
+```{r}
+ggplot() +
+  geom_sf(data = (employment %>% filter(!is.na(emp2019))), 
+          aes(fill = emp2019)) +
+  scale_fill_viridis_c() +
+  labs(title = 'Employment Rates of Persons with Foreign Citizenship',
+       fill = 'Employment Rates in %') +
+  theme_bw()
+
+ggsave(file = here::here('out/employment-rates-map.png'),
+       width = 12, height = 6)
+```
 
 ## Disconnect from Database
 
