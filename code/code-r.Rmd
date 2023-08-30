@@ -534,8 +534,10 @@ Guadeloupe, Martinique, French Guiana and La Réunion
 Guadeloupe La Réunion
 
 ```{r}
+# define not in operator
 `%notin%` <- Negate(`%in%`)
 
+# plot
 ggplot() +
   geom_sf(data = (election_ep_rrp %>% filter(regionname %notin% 
                                                c('Guadeloupe', 'La Réunion', 'Guyane', 'Mayotte'))), 

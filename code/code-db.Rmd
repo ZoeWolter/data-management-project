@@ -8,3 +8,189 @@ date: "2023-08-31"
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
+
+## Load Data
+
+```{r}
+eurostat <- readxl::read_excel(here::here('data/eurostat-data.xlsx'), 
+                               sheet = "Sheet 1", skip = 12)
+```
+
+## Preprocessing 
+
+Before the data is stored in the database for further processing, some initial preprocessing has to be done due to the Excel format of the original data:
+```{r}
+# define not in operator
+`%notin%` <- Negate(`%in%`)
+
+# cleaning
+eurostat <- eurostat %>%
+  dplyr::select(
+    nuts2 = TIME...1,
+    region = TIME...2,
+    year2019 = `2019`,
+    comment2019 = ...4,
+    year2020 = `2020`,
+    comment2020 = ...6,
+    year2021 = `2021`,
+    comment2021 = ...8,
+    year2022 = `2022`,
+    comment2022 = ...10,
+  ) %>%
+  dplyr::filter(
+    nuts2 %notin% c('GEO (Codes)', 'EU27_2020', 'EA20', NA, 'Special value',
+                    ':', 'Available flags:', 'du', 'bd', 'bu', 'b', 'd', 'bdu', 'u')
+  )
+
+# check variable classes
+purrr::map(eurostat, class)
+```
+
+## Database Setup
+
+Create and connect to database `dataproject`:
+```{r}
+# connect to postgres 
+db <- dbConnect(Postgres(),
+                user = "correlaid", 
+                password = "")
+
+db <- dbConnect(Postgres(),
+                user = "dpuser", 
+                password = "dppassword")
+
+# create database if it does not exist yet
+dbExecute(db, "CREATE DATABASE dataproject;")
+
+# connect to database
+db <- dbConnect(Postgres(),
+                dbname = "dataproject",
+                user = "correlaid", 
+                password = "")
+
+db <- dbConnect(Postgres(),
+                dbname = "dataproject",
+                user = "dpuser", 
+                password = "dppassword")
+```
+
+Write dataset `eurostat` to database:
+```{r}
+# if the table 'eurostat' already exists in the database, then first remove it
+# dbExecute(db, 'DROP TABLE eurostat')
+
+# write dataset to database
+dbWriteTable(db, 'eurostat', eurostat)
+
+# check
+dbListTables(db) 
+dbGetQuery(db,
+           'SELECT nuts2
+            FROM eurostat
+            LIMIT 5;')
+```
+
+## Data Processing
+
+Drop variables which are not relevant for the further analysis. As the last EP election was in 2019, the data on employment status of persons with foreign citizenship in this year is selected:
+```{r}
+# drop irrelevant variables 
+dbExecute(db,
+          'ALTER TABLE eurostat
+           DROP COLUMN comment2019,
+           DROP COLUMN year2020,
+           DROP COLUMN comment2020,
+           DROP COLUMN year2021,
+           DROP COLUMN comment2021,
+           DROP COLUMN year2022,
+           DROP COLUMN comment2022;')
+
+# check
+dbGetQuery(db,
+           'SELECT *
+            FROM eurostat
+            LIMIT 5;')
+
+# recode NA's
+dbExecute(db,
+          "UPDATE eurostat
+           SET year2019 = NULL
+           WHERE year2019 = ':';")
+
+# check
+dbGetQuery(db,
+           'SELECT * 
+            FROM eurostat 
+            WHERE year2019 IS NULL;')
+
+# check datatypes
+dbGetQuery(db,
+           "SELECT *
+            FROM INFORMATION_SCHEMA.COLUMNS 
+            WHERE TABLE_NAME = 'eurostat';")
+
+# convert text to number for employment rate
+dbExecute(db,
+          "ALTER TABLE eurostat
+           ADD emp2019 real;")
+
+dbExecute(db,
+          "UPDATE eurostat
+           SET emp2019 = CAST(year2019 AS real)")
+
+# check and drop unnecessary column
+dbGetQuery(db,
+           "SELECT emp2019, CAST(year2019 AS real) 
+           FROM eurostat;")
+dbExecute(db,
+          'ALTER TABLE eurostat
+           DROP COLUMN year2019;')
+```
+
+## Data Analysis
+
+Average of employment rates for persons with foreign citizenship over all regions:
+```{r}
+dbGetQuery(db,
+           'SELECT avg(emp2019)
+            FROM eurostat;')
+```
+
+Regions with the lowest employment rate of persons with foreign citizenship:
+```{r}
+dbGetQuery(db,
+           'SELECT *
+            FROM eurostat
+            ORDER BY emp2019
+            LIMIT 10;')
+```
+
+Regions with the lowest employment rate of persons with foreign citizenship:
+```{r}
+dbGetQuery(db,
+           'SELECT *
+            FROM eurostat
+            WHERE emp2019 IS NOT NULL
+            ORDER BY emp2019 DESC
+            LIMIT 10;')
+```
+
+## Export Table 
+
+Store table as csv to be merged with other data table:
+```{r}
+eurostat <- dbGetQuery(db,
+                       'SELECT *
+                       FROM eurostat;')
+
+readr::write_csv(x = eurostat,
+                 file = here::here('data/eurostat-processed.csv'))
+```
+
+
+## Disconnect from Database
+
+```{r}
+dbDisconnect(db)
+```
+
