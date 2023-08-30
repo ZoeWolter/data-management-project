@@ -32,15 +32,17 @@ In recent years, the narrative of radical right parties gaining popularity all o
 For the analysis, the **European NUTS-Level Election Dataset** (Vergioglou et al. 2022) is used for data on European parliamentary elections on a disaggregated level. The dataset contains election data for national parliamentary elections as well as European parliament (EP) results from current EU member states and UK from 1994 disaggregated to the European NUTS regions. For this analysis, data for the EP elections on NUTS2 region level is used. To get an insight into whether a party can be classified as nationalist and radical right party, the **Manifesto dataset** (Lehmann et al. 2023) is used. It provides information on how to categorize a party in party families. Unfortunately, the variable is assigned once when the party first appears in the dataset, but nevertheless it is a good first classification of European parties. However, a lot of manually categorization has to be done as some parties included in the EU-NED dataset are not included in the Manifesto dataset or do not have identical names or identifiers. Data on unemployment by citizenship (i.e. unemployment rate of those with citizenship in a foreign country) is retrieved from **Eurostat**. They provide regional information on NUTS2 level on the unemployment rate among those cizizens with citizenship in a foreign country. For the sake of data visualization of the **NUTS2** regions, the GISCO statistical unit dataset of Eurostat is used.
 
 ## Analysis
-
+![Map Vote Share](https://github.com/ZoeWolter/data-management-project/blob/main/out/vote-shares-rrp-map.png?raw=true)
+![Map Employment Rate](https://github.com/ZoeWolter/data-management-project/blob/main/out/employment-rates-map.png?raw=true)
+![Violin Vote Shares](https://github.com/ZoeWolter/data-management-project/blob/main/out/vote-shares-rrp.png?raw=true)
+![Violin Employment Rates](https://github.com/ZoeWolter/data-management-project/blob/main/out/employment-rates.png?raw=true)
+![Comparison](https://github.com/ZoeWolter/data-management-project/blob/main/out/employment-voteshares.png?raw=true)
 
 ## Some thoughts about limitations and further research
 - Just descriptive insights so far, further analysis has to go further and analyze vote choice on the individual level. 
 - It would be interesting to run the analysis again, not for European parliamentary elections but national elections in the European countries. 
 
 ## References
-- **ESS**: European Social Survey European Research Infrastructure (ESS ERIC). (2023). ESS10 integrated file, edition 3.1 [Data set]. Sikt - Norwegian Agency for Shared Services in Education and Research. https://doi.org/10.21338/ess10e03_1
-
 - Bolet, D. (2020). *Local labour market competition and radical right voting: Evidence from France.* European Journal of Political Research, 59(4), 817–841. 
 - Eurostat (2023). *Nomenclature of territorial units for statistics*. https://ec.europa.eu/eurostat/de/web/gisco/geodata/reference-data/administrative-units-statistical-units/nuts (**NUTS**)
 - Eurostat (2023). *Employment rates by sex, age, educational attainment level, citizenship and NUTS 2 regions*. https://ec.europa.eu/eurostat/databrowser/bookmark/2a2a5032-8ded-43bf-aaec-2878e22a9c86?lang=en (**Eurostat**)
